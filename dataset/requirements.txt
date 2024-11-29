@@ -1,0 +1,2 @@
+datasets evaluate transformers[sentencepiece]
+torch == 2.5.1
