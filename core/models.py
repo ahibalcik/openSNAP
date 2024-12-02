@@ -36,3 +36,7 @@ class MBartModelHandler:
         combined_pooled = encoder_mean_pooled + decoder_mean_pooled # Element-wise sum
 
         return combined_pooled
+
+if __name__ == "__main__":
+    model = MBartModelHandler()
+    print(model.extract_activations("안녕하세요. 한국어 문장입니다.", "ko_KR"))

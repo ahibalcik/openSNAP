@@ -8,7 +8,7 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from sae import SparseAutoencoder
 
-def Vecto2D(SAE_encoder, trained_model_path, trained_vectors)
+def Vecto2D(SAE_encoder, trained_model_path, trained_vectors):
     model = SAE_encoder
     model.load_state_dict(torch.load(trained_model_path)) # model path
     model.eval()
@@ -27,16 +27,22 @@ def Vecto2D(SAE_encoder, trained_model_path, trained_vectors)
     tsne = TSNE(n_components=2, random_state=0)
     data_2D = tsne.fit_transform(encoded_array)
 
-    # Check the shape of projected data
-    print(data_2D.shape)
-    # visualize
-    plt.scatter(data_2D[:, 0], data_2D[:, 1])
-    plt.title('t-SNE Projection of Encoded Data')
-    plt.xlabel('Component 1')
-    plt.ylabel('Component 2')
-    plt.show()
-
     return data_2D
+
+def get_dataframe(data_2D):
+    data_list = []
+    # 2D data to dataframe
+    for i in range(len(data_2D)):
+        data_dict = {
+            'x': data_2D[i][0],
+            'y': data_2D[i][1]
+        }
+        data_list.append(data_dict)
+    
+    # Create pandas dataframe
+    df = pd.DataFrame(data_list)
+    
+    return df
 
 def load_config(config_path: str):
     """
