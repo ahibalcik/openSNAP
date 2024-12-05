@@ -3,31 +3,50 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from models import MBartModelHandler
+from collections import defaultdict
 import os
 
 class TextDataset(Dataset):
-    def __init__(self, num_samples=10000):
+    def __init__(self, num_samples=10000 * 100):
         """
-        다국어 텍스트 데이터셋 초기화
+        다국어 병렬 텍스트 데이터셋 초기화
         Args:
             num_samples: 샘플링할 데이터 수
         """
-        # OSCAR 데이터셋에서 한국어, 영어, 스페인어, 중국어 샘플 로드
-        languages = ['ko', 'en', 'es', 'zh']
         self.data = []
         
-        for lang in languages:
-            dataset = load_dataset('oscar', f'unshuffled_deduplicated_{lang}', streaming=True)
-            samples = list(dataset['train'].take(num_samples // len(languages)))
-            texts = [sample['text'] for sample in samples]
-            # 각 언어별 텍스트를 튜플로 만들어 저장
-            for text in texts:
-                self.data.append((text, "", "", ""))  # ko, en, es, zh 순서로 저장
-                
-        # MBartModelHandler 초기화
-        self.model_handler = MBartModelHandler()
-        self.dataloader = DataLoader(self, batch_size=32, shuffle=True)
+        # OPUS-100 데이터셋 로드 (영어 중심 다국어 병렬 코퍼스)
+        languages = ['ko', 'en', 'es', 'zh']
+        data_pairs = {}
         
+        # 각 언어쌍의 병렬 데이터 로드
+        for lang in languages:
+            if lang != 'en':
+                dataset = load_dataset('opus100', f'en-{lang}', split='train', streaming=True)
+                data_pairs[f'en-{lang}'] = list(dataset.take(num_samples))
+
+        # 영어 문장을 키로 하는 딕셔너리 생성
+        en_sentences = defaultdict(dict)
+        for pair in data_pairs:
+            for example in data_pairs[pair]:
+                en_text = example['translation']['en']
+                other_lang = pair.split('-')[1]
+                other_text = example['translation'][other_lang]
+                en_sentences[en_text][other_lang] = other_text
+
+        # 4개 언어가 모두 있는 문장만 선택하여 튜플로 저장
+        self.data = []
+        for en_text, translations in en_sentences.items():
+            if all(lang in translations for lang in ['ko', 'es', 'zh']):
+                self.data.append((
+                    translations['ko'],  # Korean first for MBartModelHandler
+                    en_text,            # English second
+                    translations['es'],  # Spanish third 
+                    translations['zh']   # Chinese fourth
+                ))
+                if len(self.data) >= num_samples:
+                    break
+
     def __len__(self):
         return len(self.data)
     
