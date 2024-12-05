@@ -1,33 +1,51 @@
 # core/data_loader.py
 
-import torch
+import os
+import ast
 from torch.utils.data import Dataset, DataLoader
 
+DATASET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset")  # Dataset 폴더 경로 상수
+
 class TextDataset(Dataset):
-    def __init__(self, file_path: str, tokenizer):
+    def __init__(self, file_name: str, tokenizer):
         """
-        Initialize the dataset with texts and tokenizer.
+        Initialize text dataset.
+        
+        Args:
+            file_name: Dataset filename (e.g. "words_datasets.txt")
+            tokenizer: Tokenizer object
         """
-        # TODO: Load and preprocess the dataset
-        pass
+        self.file_path = os.path.join(DATASET_DIR, file_name)
+        self.tokenizer = tokenizer
+        self.data = self._load_data()
+        
+    def _load_data(self):
+        """Read dataset file and convert to list of tuples"""
+        data = []
+        with open(self.file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # Convert string to tuple
+                tuple_data = ast.literal_eval(line.strip())
+                data.append(tuple_data)
+        return data
 
     def __len__(self):
-        """
-        Return the size of the dataset.
-        """
-        # TODO: Return the number of samples
-        pass
+        """Return size of dataset"""
+        return len(self.data)
 
     def __getitem__(self, idx):
-        """
-        Get a single sample from the dataset.
-        """
-        # TODO: Return a single preprocessed sample
-        pass
+        """Return data sample for given index"""
+        return self.data[idx]
 
-def get_dataloader(file_path: str, tokenizer, batch_size: int, shuffle: bool = True):
+def get_dataloader(file_name: str, tokenizer, batch_size: int, shuffle: bool = True):
     """
-    Create a DataLoader for the dataset.
+    Create data loader.
+    
+    Args:
+        file_name: Dataset filename
+        tokenizer: Tokenizer object
+        batch_size: Batch size
+        shuffle: Whether to shuffle data
     """
-    # TODO: Implement DataLoader creation
-    pass
+    dataset = TextDataset(file_name, tokenizer)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from sae import SparseAutoencoder
 
 def Vecto2D(SAE_encoder, trained_model_path, trained_vectors):
-    model = SAE_encoder
+    model = SAE_encoder # SparseAutoencoder
     model.load_state_dict(torch.load(trained_model_path))
     model.eval()
 
