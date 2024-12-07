@@ -11,34 +11,31 @@ from core.sae import SparseAutoencoder
 
 def Vecto2D(*args):
     """
-    여러 언어의 128차원 단어 벡터 리스트들과 해당 텍스트들을 2차원으로 변환하는 함수
-    
-    Args:
-        *args: (vectors, texts) 튜플들의 리스트
-               vectors: 128차원 벡터들 (numpy array)
-               texts: 원본 텍스트 리스트
-        
-    Returns:
-        각 언어별 2차원으로 변환된 벡터와 텍스트 리스트들의 튜플
+    여러 언어의 터들을 2차원으로 변환하는 함수
     """
     # 벡터와 텍스트 분리
     vectors_lists = [arg[0] for arg in args]
     texts_lists = [arg[1] for arg in args]
     
-    # 모든 벡터들을 하나로 합침
-    combined_vectors = np.concatenate(vectors_lists, axis=0)
+    # numpy array로 변환 및 전처리
+    vectors_arrays = []
+    for vectors in vectors_lists:
+        if isinstance(vectors, torch.Tensor):
+            vectors = vectors.detach().cpu().numpy()
+        vectors = np.nan_to_num(vectors, nan=0.0, posinf=1e6, neginf=-1e6)
+        vectors_arrays.append(vectors)
     
-    # 전체 벡터에 대해 t-SNE를 한번만 학습/적용
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    # 모든 벡터들을 하나로 합침
+    combined_vectors = np.concatenate(vectors_arrays, axis=0)
+    
+    # t-SNE 적용
+    tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(combined_vectors)-1))
     combined_2d = tsne.fit_transform(combined_vectors)
     
-    # 각 언어별 벡터 개수
-    lengths = [len(vectors) for vectors in vectors_lists]
-    
-    # 변환된 2D 벡터들을 다시 언어별로 분리하고 텍스트와 함께 반환
+    # 결과 분리
     start_idx = 0
     result = []
-    for length, texts in zip(lengths, texts_lists):
+    for length, texts in zip([len(v) for v in vectors_arrays], texts_lists):
         end_idx = start_idx + length
         result.append((combined_2d[start_idx:end_idx], texts))
         start_idx = end_idx
@@ -47,12 +44,13 @@ def Vecto2D(*args):
 
 def get_dataframe(data_2D_with_text):
     """
-    2D 벡터와 텍스트를 데이터프레임으로 변환
+    2D 벡터와 ���스트를 데이터프레임으로 변환
     
     Args:
-        data_2D_with_text: (2D_vectors, texts) 튜플
+        data_2D_with_text: (2D_vectors, texts) 튜플의 튜플
     """
-    vectors_2d, texts = data_2D_with_text
+    # 첫 번째 언어 쌍만 사용 (튜플의 첫 번째 요소)
+    vectors_2d, texts = data_2D_with_text[0]
     data_list = []
     
     for i in range(len(vectors_2d)):
@@ -112,20 +110,25 @@ def visualize_statistics(data_2D_with_text, save=False, filename="statistics.png
     Visualize 2D statistics and optionally save the figure.
     
     Args:
-        data_2D_with_text: (2D_vectors, texts) 튜플
+        data_2D_with_text: (2D_vectors, texts) 튜플의 튜플
         save: Save the figure if True
         filename: Filename to save the figure
     """
-    for vectors_2d, texts in data_2D_with_text:
-        plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], alpha=0.5)
-        for i, text in enumerate(texts):
-            plt.annotate(text, (vectors_2d[i, 0], vectors_2d[i, 1]), fontsize=8)
+    plt.figure(figsize=(15, 10))
+    
+    # 첫 번째 언어 쌍만 시각화
+    vectors_2d, texts = data_2D_with_text[0]
+    plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], alpha=0.5)
+    
+    for i, text in enumerate(texts):
+        plt.annotate(text, (vectors_2d[i, 0], vectors_2d[i, 1]), fontsize=8)
 
     plt.title("2D Visualization of Compressed Activations")
     plt.xlabel("Dimension 1")
     plt.ylabel("Dimension 2")
     
     if save:
-        plt.savefig(filename)
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
         print(f"Statistics visualized and saved to {filename}")
+    
     plt.show()

@@ -31,28 +31,38 @@ class MBartModelHandler:
         combined_pooled_batch = []
         texts = []
         
+        print(f"Starting activation extraction for {src_lang}")
+        total_batches = len(dataloader)
+        
         with torch.no_grad():
-            for batch in dataloader:
-                # batch contains tuples of (ko, en, es, zh) data
-                ko_texts = [item[0] for item in batch]  # Extract Korean texts
-                texts.extend(ko_texts)  # Store original texts
+            for batch_idx, batch in enumerate(dataloader, 1):
+                # Extract texts from batch
+                ko_texts = [item[0] for item in batch]
+                texts.extend(ko_texts)
                 
+                # Progress update
+                print(f"Processing batch {batch_idx}/{total_batches}", end='\r')
+                
+                # Process batch
                 self.tokenizer.src_lang = src_lang
                 encoded_batch = self.tokenizer(ko_texts, return_tensors="pt", padding=True, truncation=True).to(self.device)
                 
                 outputs = self.model(**encoded_batch, output_hidden_states=True, return_dict=True)
-
+                
                 # Extract and process hidden states
                 encoder_last_hidden_state = outputs.encoder_last_hidden_state
                 decoder_first_hidden_state = outputs.decoder_hidden_states[1]
-
+                
                 encoder_mean_pooled = torch.mean(encoder_last_hidden_state, dim=1)
                 decoder_mean_pooled = torch.mean(decoder_first_hidden_state, dim=1)
-
+                
                 combined_pooled = encoder_mean_pooled + decoder_mean_pooled
                 combined_pooled_batch.append(combined_pooled)
-
-        return torch.cat(combined_pooled_batch, dim=0), texts
+        
+        final_vectors = torch.cat(combined_pooled_batch, dim=0)
+        print(f"\nExtraction complete. Processed {len(texts)} texts, vector shape: {final_vectors.shape}")
+        
+        return final_vectors, texts
 
 if __name__ == "__main__":
     from data_loader import get_dataloader
