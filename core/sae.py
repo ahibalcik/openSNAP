@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
-from models import MBartModelHandler
+from core.models import MBartModelHandler
 from collections import defaultdict
 import os
 

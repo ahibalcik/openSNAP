@@ -6,7 +6,8 @@ import pandas as pd
 import numpy as np
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-from sae import SparseAutoencoder
+import os
+from core.sae import SparseAutoencoder
 
 def Vecto2D(*args):
     """
@@ -91,3 +92,40 @@ def save_csv(dataframe, path: str):
     
     # Save DataFrame to CSV
     dataframe.to_csv(path, index=False, encoding='utf-8')
+
+def save_statistics_to_csv(dataframe, path: str):
+    """
+    Save DataFrame as CSV file.
+    Args:
+        dataframe: pandas DataFrame to save
+        path: save path (e.g. 'result/ko/data.csv')
+    """
+    # Create directory if not exists
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    # Save DataFrame to CSV
+    dataframe.to_csv(path, index=False, encoding='utf-8')
+    print(f"Statistics saved to {path}")
+
+def visualize_statistics(data_2D_with_text, save=False, filename="statistics.png"):
+    """
+    Visualize 2D statistics and optionally save the figure.
+    
+    Args:
+        data_2D_with_text: (2D_vectors, texts) 튜플
+        save: Save the figure if True
+        filename: Filename to save the figure
+    """
+    for vectors_2d, texts in data_2D_with_text:
+        plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], alpha=0.5)
+        for i, text in enumerate(texts):
+            plt.annotate(text, (vectors_2d[i, 0], vectors_2d[i, 1]), fontsize=8)
+
+    plt.title("2D Visualization of Compressed Activations")
+    plt.xlabel("Dimension 1")
+    plt.ylabel("Dimension 2")
+    
+    if save:
+        plt.savefig(filename)
+        print(f"Statistics visualized and saved to {filename}")
+    plt.show()
