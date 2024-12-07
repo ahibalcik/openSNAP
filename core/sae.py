@@ -54,7 +54,7 @@ class TextDataset(Dataset):
         return self.data[idx]
 
 class SparseAutoencoder(nn.Module):
-    def __init__(self, input_dim=1024, hidden_dim=128, sparsity_param=0.05, sparsity_weight=0.1, variance_threshold=0.95):
+    def __init__(self, model_save_path='models/sae.pth', input_dim=1024, hidden_dim=128, sparsity_param=0.05, sparsity_weight=0.1, variance_threshold=0.95):
         """
         다국어 희소 오토인코더 초기화
         Args:
@@ -79,7 +79,15 @@ class SparseAutoencoder(nn.Module):
         self.sparsity_param = sparsity_param
         self.sparsity_weight = sparsity_weight
         self.variance_threshold = variance_threshold
-        
+
+        # 저장된 모델이 있으면 불러오기
+        if os.path.exists(model_save_path):
+            self.load_state_dict(torch.load(model_save_path))
+            print(f"저장된 모델을 {model_save_path}에서 불러왔습니다.")
+        else:
+            print("저장된 모델이 없어 새로 학습을 시작합니다.")
+            # 학습을 여기서 시작하지 않고, main 블록에서 처리
+
     def forward(self, x):
         encoded = self.encoder(x)
         reconstructed = self.decoder(encoded)
@@ -151,7 +159,10 @@ def train_autoencoder(model_save_path='models/sae.pth', batch_size=32, epochs=10
     print(f'Model saved to {model_save_path}')
 
 if __name__ == "__main__":
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # 모델 초기화
+    model = SparseAutoencoder().to(device)
+    
     # 모델 학습 실행
-    train_autoencoder()
-
-
+    train_autoencoder(model_save_path='models/sae.pth')
