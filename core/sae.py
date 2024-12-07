@@ -7,7 +7,7 @@ from collections import defaultdict
 import os
 
 class TextDataset(Dataset):
-    def __init__(self, num_samples=10000 * 100):
+    def __init__(self, num_samples=10000):
         """
         다국어 병렬 텍스트 데이터셋 초기화
         Args:
@@ -20,12 +20,14 @@ class TextDataset(Dataset):
         data_pairs = {}
         
         # 각 언어쌍의 병렬 데이터 로드
+        print("각 언어쌍의 병렬 데이터 로드 중...")
         for lang in languages:
             if lang != 'en':
                 dataset = load_dataset('opus100', f'en-{lang}', split='train', streaming=True)
                 data_pairs[f'en-{lang}'] = list(dataset.take(num_samples))
 
         # 영어 문장을 키로 하는 딕셔너리 생성
+        print("딕셔너리 생성 중...")
         en_sentences = defaultdict(dict)
         for pair in data_pairs:
             for example in data_pairs[pair]:
@@ -35,6 +37,7 @@ class TextDataset(Dataset):
                 en_sentences[en_text][other_lang] = other_text
 
         # 4개 언어가 모두 있는 문장만 선택하여 튜플로 저장
+        print("4개국어 튜플 생성 중...")
         self.data = []
         for en_text, translations in en_sentences.items():
             if all(lang in translations for lang in ['ko', 'es', 'zh']):
@@ -54,16 +57,7 @@ class TextDataset(Dataset):
         return self.data[idx]
 
 class SparseAutoencoder(nn.Module):
-    def __init__(self, model_save_path='models/sae.pth', input_dim=1024, hidden_dim=128, sparsity_param=0.05, sparsity_weight=0.1, variance_threshold=0.95):
-        """
-        다국어 희소 오토인코더 초기화
-        Args:
-            input_dim: 입력 차원 (mBART hidden state 크기)
-            hidden_dim: 인코더의 은닉층 차원
-            sparsity_param: 희소성 파라미터 (ρ)
-            sparsity_weight: 희소성 패널티 가중치 (β)
-            variance_threshold: 분산 보존 임계값 (95%)
-        """
+    def __init__(self, input_dim=1024, hidden_dim=128, sparsity_param=0.05, sparsity_weight=0.1, variance_threshold=0.95):
         super(SparseAutoencoder, self).__init__()
         
         self.encoder = nn.Sequential(
@@ -80,17 +74,18 @@ class SparseAutoencoder(nn.Module):
         self.sparsity_weight = sparsity_weight
         self.variance_threshold = variance_threshold
 
-        # 저장된 모델이 있으면 불러오기
-        if os.path.exists(model_save_path):
-            self.load_state_dict(torch.load(model_save_path))
-            print(f"저장된 모델을 {model_save_path}에서 불러왔습니다.")
-        else:
-            print("저장된 모델이 없어 새로 학습을 시작합니다.")
-            # 학습을 여기서 시작하지 않고, main 블록에서 처리
-
     def forward(self, x):
+        """Forward pass through the autoencoder"""
+        # 입력값 정규화
+        x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
+        x = torch.clamp(x, min=-1e6, max=1e6)
+        
         encoded = self.encoder(x)
+        encoded = torch.clamp(encoded, min=-1e6, max=1e6)
+        
         reconstructed = self.decoder(encoded)
+        reconstructed = torch.clamp(reconstructed, min=-1e6, max=1e6)
+        
         return reconstructed, encoded
         
     def get_semantic_vector(self, x):
@@ -120,38 +115,57 @@ class SparseAutoencoder(nn.Module):
 def train_autoencoder(model_save_path='models/sae.pth', batch_size=32, epochs=10):
     """
     오토인코더 학습 함수
-    Args:
-        model_save_path: 모델 저장 경로
-        batch_size: 배치 크기
-        epochs: 학습 에포크 수
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # 데이터셋과 데이터로더 초기화
+    print("데이터셋 초기화 중...")
     dataset = TextDataset()
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
-    # 모델 초기화
+    # MBart 모델 초기화
+    print("MBart 모델 초기화 중...")
+    mbart_model = MBartModelHandler()
+    
+    # 오토인코더 모델 초기화
+    print("오토인코더 모델 초기화 중...")
     model = SparseAutoencoder().to(device)
     optimizer = torch.optim.Adam(model.parameters())
     
     # 학습 루프
+    print("학습 루프 시작...")
     model.train()
     for epoch in range(epochs):
         total_loss = 0
-        for batch in dataloader:
-            batch = batch.to(device)
+        for batch_idx, batch in enumerate(dataloader):
+            # 각 언어의 텍스트 추출
+            ko_texts = [item[0] for item in batch]  # Korean texts
             
+            # MBart를 통해 벡터 추출
+            vectors, _ = mbart_model.extract_activations(
+                DataLoader([(text,) for text in ko_texts], batch_size=len(ko_texts)), 
+                "ko_KR"
+            )
+            
+            # 텐서를 장치로 이동
+            vectors = vectors.to(device)
+            
+            # 오토인코더 학습
             optimizer.zero_grad()
-            reconstructed, encoded = model(batch)
-            loss = model.loss_function(batch, reconstructed, encoded)
+            reconstructed, encoded = model(vectors)
+            loss = model.loss_function(vectors, reconstructed, encoded)
             
             loss.backward()
             optimizer.step()
             
             total_loss += loss.item()
             
-        print(f'Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(dataloader):.4f}')
+            if batch_idx % 10 == 0:
+                print(f'Epoch {epoch+1}/{epochs}, Batch {batch_idx}/{len(dataloader)}, '
+                      f'Loss: {loss.item():.4f}')
+        
+        avg_loss = total_loss / len(dataloader)
+        print(f'Epoch {epoch+1}/{epochs}, Average Loss: {avg_loss:.4f}')
     
     # 모델 저장
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
