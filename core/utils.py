@@ -9,55 +9,44 @@ import matplotlib.pyplot as plt
 import os
 from core.sae import SparseAutoencoder
 
-def Vecto2D(*args):
+def Vecto2D(data):
     """
-    여러 언어의 터들을 2차원으로 변환하는 함수
-    """
-    # 벡터와 텍스트 분리
-    vectors_lists = [arg[0] for arg in args]
-    texts_lists = [arg[1] for arg in args]
-    
-    # numpy array로 변환 및 전처리
-    vectors_arrays = []
-    for vectors in vectors_lists:
-        if isinstance(vectors, torch.Tensor):
-            vectors = vectors.detach().cpu().numpy()
-        vectors = np.nan_to_num(vectors, nan=0.0, posinf=1e6, neginf=-1e6)
-        vectors_arrays.append(vectors)
-    
-    # 모든 벡터들을 하나로 합침
-    combined_vectors = np.concatenate(vectors_arrays, axis=0)
-    
-    # t-SNE 적용
-    tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(combined_vectors)-1))
-    combined_2d = tsne.fit_transform(combined_vectors)
-    
-    # 결과 분리
-    start_idx = 0
-    result = []
-    for length, texts in zip([len(v) for v in vectors_arrays], texts_lists):
-        end_idx = start_idx + length
-        result.append((combined_2d[start_idx:end_idx], texts))
-        start_idx = end_idx
-        
-    return tuple(result)
-
-def get_dataframe(data_2D_with_text):
-    """
-    2D 벡터와 ���스트를 데이터프레임으로 변환
+    Convert vectors to 2D (e.g., apply TSNE)
     
     Args:
-        data_2D_with_text: (2D_vectors, texts) 튜플의 튜플
+        data: (vectors, texts) tuple
+    Returns:
+        compressed_2d: 2D converted vectors
+        texts: input texts
     """
-    # 첫 번째 언어 쌍만 사용 (튜플의 첫 번째 요소)
-    vectors_2d, texts = data_2D_with_text[0]
+    vectors = data
+    # Apply TSNE
+    tsne = TSNE(n_components=2)
+    compressed_2d = tsne.fit_transform(vectors.numpy())  # Convert vectors to numpy array and apply TSNE
+    return compressed_2d
+
+def get_dataframe(data_2D_with_text, lang_code='en'):
+    """
+    Convert 2D vectors and texts to a dataframe
+    
+    Args:
+        data_2D_with_text: ((2D_vectors, texts), ...) tuple of tuples
+        lang_code: Language code (e.g., 'en', 'ko', 'zh', 'es')
+    """
+    vectors_2d, texts = data_2D_with_text  # unpacking modified
     data_list = []
+    
+    # Check length
+    if len(vectors_2d) != len(texts):
+        print(f"Warning: Length mismatch between vectors and texts for language {lang_code}.")
+        return pd.DataFrame()  # Return empty dataframe
     
     for i in range(len(vectors_2d)):
         data_dict = {
             'x': vectors_2d[i][0],
             'y': vectors_2d[i][1],
-            'text': texts[i]
+            'text': texts[i],  # Language code removed
+            'lang': lang_code  # Language distinction column added
         }
         data_list.append(data_dict)
     
@@ -105,27 +94,57 @@ def save_statistics_to_csv(dataframe, path: str):
     dataframe.to_csv(path, index=False, encoding='utf-8')
     print(f"Statistics saved to {path}")
 
-def visualize_statistics(data_2D_with_text, save=False, filename="statistics.png"):
+def visualize_statistics(data_2D_with_texts, save=False, filename="statistics.png"):
     """
-    Visualize 2D statistics and optionally save the figure.
+    Visualize 2D statistics with different colors for each language
     
     Args:
-        data_2D_with_text: (2D_vectors, texts) 튜플의 튜플
+        data_2D_with_texts: [(2D_vectors, texts, lang_code), ...] list
         save: Save the figure if True
         filename: Filename to save the figure
     """
     plt.figure(figsize=(15, 10))
     
-    # 첫 번째 언어 쌍만 시각화
-    vectors_2d, texts = data_2D_with_text[0]
-    plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], alpha=0.5)
+    # Define colors for each language
+    colors = {
+        'en': '#1f77b4',  # Blue
+        'ko': '#ff7f0e',  # Orange
+        'zh': '#2ca02c',  # Green
+        'es': '#d62728'   # Red
+    }
     
-    for i, text in enumerate(texts):
-        plt.annotate(text, (vectors_2d[i, 0], vectors_2d[i, 1]), fontsize=8)
+    # Visualize each language's data
+    for compressed_2d, texts, lang_code in data_2D_with_texts:
+        
+        # Convert compressed_2d to numpy array if it's a list
+        compressed_2d = np.array(compressed_2d)  # Convert to numpy array
+        
+        plt.scatter(
+            compressed_2d[:, 0], 
+            compressed_2d[:, 1], 
+            c=colors[lang_code],
+            label=f'Language: {lang_code}',
+            alpha=0.6
+        )
+        
+        # Add text labels
+        for i, text in enumerate(texts):
+            plt.annotate(
+                text,
+                (compressed_2d[i, 0], compressed_2d[i, 1]),
+                fontsize=8,
+                alpha=0.7,
+                xytext=(5, 5),
+                textcoords='offset points'
+            )
 
-    plt.title("2D Visualization of Compressed Activations")
+    plt.title("2D Visualization of Compressed Activations by Language")
     plt.xlabel("Dimension 1")
     plt.ylabel("Dimension 2")
+    plt.legend()
+    
+    # Add grid
+    plt.grid(True, linestyle='--', alpha=0.3)
     
     if save:
         plt.savefig(filename, dpi=300, bbox_inches='tight')

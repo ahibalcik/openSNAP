@@ -9,25 +9,25 @@ import os
 class TextDataset(Dataset):
     def __init__(self, num_samples=10000):
         """
-        다국어 병렬 텍스트 데이터셋 초기화
+        Initialize a multilingual parallel text dataset
         Args:
-            num_samples: 샘플링할 데이터 수
+            num_samples: Number of samples to sample
         """
         self.data = []
         
-        # OPUS-100 데이터셋 로드 (영어 중심 다국어 병렬 코퍼스)
+        # Load OPUS-100 dataset (English-centric multilingual parallel corpus)
         languages = ['ko', 'en', 'es', 'zh']
         data_pairs = {}
         
-        # 각 언어쌍의 병렬 데이터 로드
-        print("각 언어쌍의 병렬 데이터 로드 중...")
+        # Load parallel data for each language pair
+        print("Loading parallel data for each language pair...")
         for lang in languages:
             if lang != 'en':
                 dataset = load_dataset('opus100', f'en-{lang}', split='train', streaming=True)
                 data_pairs[f'en-{lang}'] = list(dataset.take(num_samples))
 
-        # 영어 문장을 키로 하는 딕셔너리 생성
-        print("딕셔너리 생성 중...")
+        # Create a dictionary with English sentences as keys
+        print("Creating a dictionary...")
         en_sentences = defaultdict(dict)
         for pair in data_pairs:
             for example in data_pairs[pair]:
@@ -36,8 +36,8 @@ class TextDataset(Dataset):
                 other_text = example['translation'][other_lang]
                 en_sentences[en_text][other_lang] = other_text
 
-        # 4개 언어가 모두 있는 문장만 선택하여 튜플로 저장
-        print("4개국어 튜플 생성 중...")
+        # Select sentences that have all four languages and store them as tuples
+        print("Selecting sentences with all four languages...")
         self.data = []
         for en_text, translations in en_sentences.items():
             if all(lang in translations for lang in ['ko', 'es', 'zh']):
@@ -76,7 +76,7 @@ class SparseAutoencoder(nn.Module):
 
     def forward(self, x):
         """Forward pass through the autoencoder"""
-        # 입력값 정규화
+        # Normalize input values
         x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
         x = torch.clamp(x, min=-1e6, max=1e6)
         
@@ -89,22 +89,22 @@ class SparseAutoencoder(nn.Module):
         return reconstructed, encoded
         
     def get_semantic_vector(self, x):
-        """입력 텐서의 의미 벡터 추출"""
+        """Extract the semantic vector of the input tensor"""
         with torch.no_grad():
             encoded = self.encoder(x)
         return encoded
     
     def loss_function(self, x, reconstructed, encoded):
-        """손실 함수 계산"""
+        """Calculate the loss function"""
         mse_loss = nn.MSELoss()(reconstructed, x)
         
-        # 분산 보존 제약 추가
+        # Add variance preservation constraint
         x_var = torch.var(x, dim=0)
         reconstructed_var = torch.var(reconstructed, dim=0)
         variance_ratio = torch.mean(reconstructed_var / x_var)
         variance_penalty = torch.abs(variance_ratio - self.variance_threshold)
         
-        # 희소성 패널티
+        # Sparsity penalty
         avg_activation = torch.mean(encoded, dim=0)
         kl_div = self.sparsity_param * torch.log(self.sparsity_param / avg_activation) + \
                  (1 - self.sparsity_param) * torch.log((1 - self.sparsity_param) / (1 - avg_activation))
@@ -114,43 +114,43 @@ class SparseAutoencoder(nn.Module):
 
 def train_autoencoder(model_save_path='models/sae.pth', batch_size=32, epochs=10):
     """
-    오토인코더 학습 함수
+    Autoencoder training function
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # 데이터셋과 데이터로더 초기화
-    print("데이터셋 초기화 중...")
+    # Initialize dataset and data loader
+    print("Initializing dataset...")
     dataset = TextDataset()
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
-    # MBart 모델 초기화
-    print("MBart 모델 초기화 중...")
+    # Initialize MBart model
+    print("Initializing MBart model...")
     mbart_model = MBartModelHandler()
     
-    # 오토인코더 모델 초기화
-    print("오토인코더 모델 초기화 중...")
+    # Initialize autoencoder model
+    print("Initializing autoencoder model...")
     model = SparseAutoencoder().to(device)
     optimizer = torch.optim.Adam(model.parameters())
     
-    # 학습 루프
-    print("학습 루프 시작...")
+    # Training loop
+    print("Starting training loop...")
     model.train()
     for epoch in range(epochs):
         total_loss = 0
         for batch_idx, batch in enumerate(dataloader):
-            # 각 언어의 텍스트 추출
+            # Extract texts for each language
             ko_texts = [item[0] for item in batch]  # Korean texts
             
-            # MBart를 통해 벡터 추출
+            # Extract vectors using MBart
             vectors, _ = mbart_model.extract_activations(
                 DataLoader([(text,) for text in ko_texts], batch_size=len(ko_texts)), 
                 "ko_KR"
             )
             
-            # 텐서를 장치로 이동
+            # Move tensors to device
             vectors = vectors.to(device)
             
-            # 오토인코더 학습
+            # Train autoencoder
             optimizer.zero_grad()
             reconstructed, encoded = model(vectors)
             loss = model.loss_function(vectors, reconstructed, encoded)
@@ -167,7 +167,7 @@ def train_autoencoder(model_save_path='models/sae.pth', batch_size=32, epochs=10
         avg_loss = total_loss / len(dataloader)
         print(f'Epoch {epoch+1}/{epochs}, Average Loss: {avg_loss:.4f}')
     
-    # 모델 저장
+    # Save model
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
     torch.save(model.state_dict(), model_save_path)
     print(f'Model saved to {model_save_path}')
@@ -175,8 +175,8 @@ def train_autoencoder(model_save_path='models/sae.pth', batch_size=32, epochs=10
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # 모델 초기화
+    # Initialize model
     model = SparseAutoencoder().to(device)
     
-    # 모델 학습 실행
+    # Run model training
     train_autoencoder(model_save_path='models/sae.pth')
